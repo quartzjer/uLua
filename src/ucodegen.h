@@ -94,4 +94,18 @@ Instruction* statELSE(Function* f, Instruction* condlist, Instruction* block); /
 Instruction* statELSEIF(Function* f, Instruction* condlist, Instruction* cond); //make elseif block
 Instruction* functionCALL(Function* f, Register* a, Register* b); //call function
 
+//parser function export
+static void *ParseAlloc(void *(*mallocProc)(size_t));
+static void Parse(
+           void *yyp,                   // The parser
+           int yymajor,                 // The major token code number
+           Token yyminor,       // The value for the token
+           Function* f              // Optional %extra_argument parameter
+);
+static void ParseFree(
+               void *p,                    // The parser to be deleted
+               void (*freeProc)(void*)     // Function used to reclaim memory
+);
+							 
+
 #endif
