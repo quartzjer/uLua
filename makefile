@@ -1,7 +1,7 @@
 # c compiler and linker options
 CC=gcc
-CFLAGS=-c -Wall
-LDFLAGS=
+CFLAGS=-g -c -Wall
+LDFLAGS=-lm
 
 # lemon parse generator
 LEMON_SRC=lemon.c
@@ -9,12 +9,12 @@ LEMON_EXE=lemon
 LEMON_OBJ=$(LEMON_SRC:.c=.o)
 
 # ulua interpreter
-ULUA_SRC=native.c gc.c vm.c ulexer.c ucodegen.c uparser.c ulua.c
+ULUA_SRC=udebug.c native.c gc.c vm.c ulexer.c ucodegen.c uparser.c ulua.c
 ULUA_EXE=ulua
 ULUA_OBJ=$(ULUA_SRC:.c=.o)
 
 # ulua compiler
-ULUAC_SRC=ulexer.c ucodegen.c uparser.c uluac.c
+ULUAC_SRC=udebug.c ulexer.c ucodegen.c uparser.c uluac.c
 ULUAC_EXE=uluac
 ULUAC_OBJ=$(ULUAC_SRC:.c=.o)
 

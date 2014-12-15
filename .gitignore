@@ -1,6 +1,7 @@
+# ignore obj compiled files
 *.o
-*.out
 lemon
 ulua
-uluai
 uluac
+uluai
+uparser.out

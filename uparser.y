@@ -38,7 +38,7 @@
 }
 
 %syntax_error {
-  f->error_code = 1;
+  f->error_code = E_SYNTAX_ERROR;
 }
 
 %stack_overflow {
@@ -61,12 +61,10 @@ semi ::= . {
 
 block(A) ::= scope statlist(B) . {
 	A = B;
-	//doReturn(f);
 	DPRINTF("P_BLOCK_STATLIST\n");
 }
-block(A) ::= scope statlist laststat(B) semi . {
+block(A) ::= scope statlist(B) laststat semi . {
 	A = B;
-	//doReturn(f);
 	DPRINTF("P_BLOCK_STATLIST_LASTSTAT\n");
 }
 ublock ::= block UNTIL exp . {
@@ -83,15 +81,27 @@ scope ::= scope statlist binding semi. {
 
 statlist(A) ::= . {
 	A = NULL;
+	f->currentStat = NULL;
 	DPRINTF("P_STATLIST_EMPTY\n");
 }
-statlist(A) ::= statlist(B) stat(C) semi . {
-	A = B == NULL ? C : B;
+statlist(A) ::= statlist(B) stat semi . {
+	if(B == NULL) { 
+		A = f->currentStat; //save only pointer to first statement
+	} else {
+		A = B;
+	}
+	f->currentStat = NULL;
 	DPRINTF("P_STATLIST_ADD_STAT\n");
 }
 
-stat ::= DO block END .
-stat ::= WHILE exp DO block END .
+stat(A) ::= DO block(B) END . {
+	A = B;
+	DPRINTF("P_STAT_BLOCK\n");
+}
+stat(A) ::= WHILE exp(B) DO block(C) END . {
+	A = statWHILE(f, B, C);
+	DPRINTF("P_STAT_WHILE\n");
+}
 stat ::= repetition DO block END .
 stat ::= REPEAT ublock .
 stat(A) ::= IF conds(B) END . {
@@ -185,7 +195,15 @@ explist23  ::= exp COMMA exp COMMA exp .
 %right     NOT HASH .
 %right     POW .
 
-exp        ::= NIL|TRUE|FALSE|DOTS .
+exp(A)        ::= NIL . {
+	A = doNil(f);
+	if(A->exprStart == NULL) A->exprStart = f->currentStat;
+}
+exp(A)        ::= TRUE(B)|FALSE . {
+	A = doBoolean(f, &B);
+	if(A->exprStart == NULL) A->exprStart = f->currentStat;
+}
+exp        ::= DOTS .
 exp(A)        ::= NUMBER(B) . {
 	Constant* c;
 	Register* r;
@@ -197,6 +215,7 @@ exp(A)        ::= NUMBER(B) . {
 	r->constpreloaded = FALSE;
 	r->constnum = c->num;
 	A = r;
+	if(A->exprStart == NULL) A->exprStart = f->currentStat;
 }
 exp(A)        ::= STRING(B) . {
 	Constant* c;
@@ -209,6 +228,7 @@ exp(A)        ::= STRING(B) . {
 	r->constpreloaded = FALSE;
 	r->constnum = c->num;
 	A = r;
+	if(A->exprStart == NULL) A->exprStart = f->currentStat;
 }
 exp        ::= function . {
 	DPRINTF("P_EXP_FUNCTION\n");
@@ -221,15 +241,18 @@ exp        ::= tableconstructor .
 exp        ::= NOT|HASH|MINUS exp .
 exp(A)        ::= exp(B) OR(D)|AND exp(C) . {
 	A = doLogic(f,B,C,&D);
+	if(A->exprStart == NULL) A->exprStart = f->currentStat;
 	DPRINTF("P_EXP_LOGIC\n");
 }
 exp(A)     ::= exp(B) L(D)|LE|G|GE|EQ|NE exp(C) . {
 	A = doCompare(f,B,C,&D);
+	if(A->exprStart == NULL) A->exprStart = f->currentStat;
 	DPRINTF("P_EXP_COMPARE\n");
 }
 exp        ::= exp CONCAT exp .
 exp(A)	   ::= exp(B) PLUS(E)|MINUS|TIMES|DIVIDE|MOD|POW exp(C) . {
 	A = doMath(f,B,C,&E);
+	if(A->exprStart == NULL) A->exprStart = f->currentStat;
 	DPRINTF("P_EXP_MATH\n");
 }
 

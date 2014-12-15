@@ -6,25 +6,28 @@
 *  This program is free software; you can redistribute it and/or modify it *
 *  under the terms of the MIT License as described in license.txt.         *
 \**************************************************************************/
-#include <SPI.h>
-#include <Wire.h>
-#include <Scout.h>
-#include <GS.h>
-#include <bitlash.h>
-#include <lwm.h>
-#include <js0n.h>
-#include "ulexer.h"
-#include "uparser.h"
+//extern "C"{
 #include "ucodegen.h"
+#include "ulexer.h"
 #include "vm.h"
+#include "uparser.h"
+	//}
+
+//#include <SPI.h>
+//#include <Wire.h>
+//#include <Scout.h>
+//#include <GS.h>
+//#include <bitlash.h>
+//#include <lwm.h>
+//#include <js0n.h>
 
 void setup() {
-  Scout.setup("ulua-test", "custom", -1);
+//  Scout.setup("ulua-test", "custom", -1);
   // Add custom setup code here
 }
 
 void loop() {
-  Scout.loop();
+//  Scout.loop();
   // Add custom loop code here
 }
 

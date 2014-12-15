@@ -1,7 +1,8 @@
 #include "ucodegen.h"
+#include "udebug.h"
 
-void initFunction(Function* f, u08* code) {
-	u08 i;
+void initFunction(Function* f, lu08* code) {
+	lu08 i;
 
 	f->code = code;
 	f->consts = NULL;
@@ -12,6 +13,7 @@ void initFunction(Function* f, u08* code) {
     f->next = NULL;
 	f->instr = NULL;
 	f->instrSize = 0;
+	f->currentStat = NULL;
 	f->error_code = E_NONE;
 	f->parsed = FALSE;
 	for(i=0; i<CG_REG_COUNT; i++) {
@@ -23,6 +25,7 @@ void initFunction(Function* f, u08* code) {
 		f->reg[i].isload = FALSE;
 		f->reg[i].islocal = FALSE;
 		f->reg[i].constpreloaded = FALSE;
+		f->reg[i].exprStart = NULL;
 	}
 }
 
@@ -62,7 +65,7 @@ void freeFunction(Function* f) {
 }
 
 BOOL constEqueals(Function* f, Constant* a, Constant* b) {
-	u08 i;
+	lu08 i;
 	if(a->type == b->type) {
 		if(a->type == NUMBER_TYPE) {
 			if(a->val_number == b->val_number)
@@ -153,7 +156,7 @@ Constant* pushVarName(Function* f, SString* str) {
 	return c;
 }
 
-Constant* getVarByNum(Function* f, u08 num) {
+Constant* getVarByNum(Function* f, lu08 num) {
 	Constant* v = f->vars;
 	while(v != NULL && v->num != num) {
 		v = v->next;
@@ -181,6 +184,14 @@ Instruction* insertInstruction(Function* f, Instruction* i, Instruction* before)
 	before->prev = i;
 	f->instrSize++;
 
+	if(f->currentStat == NULL)
+		f->currentStat = i;
+
+#ifdef DEBUGVM
+	printf("insert\t");
+	printIntruction(f, i);
+#endif
+
 	return before;
 }
 
@@ -192,6 +203,14 @@ Instruction* pushInstruction(Function* f, Instruction* i) {
 		i->next = NULL;
 		i->prev = NULL;
 		f->instrSize++;
+
+		if(f->currentStat == NULL)
+			f->currentStat = i;
+
+#ifdef DEBUGVM
+	printf("push\t");
+	printIntruction(f, i);
+#endif
 		return i;
 	}
 	last = f->instr;
@@ -203,6 +222,13 @@ Instruction* pushInstruction(Function* f, Instruction* i) {
 	i->prev = last;
 	f->instrSize++;
 
+	if(f->currentStat == NULL)
+		f->currentStat = i;
+
+#ifdef DEBUGVM
+	printf("push\t");
+	printIntruction(f, i);
+#endif
 	return i;
 }
 
@@ -229,10 +255,18 @@ Instruction* addInstruction(Function* f, Instruction* i, Instruction* after) {
 
 	f->instrSize++;
 
+	if(f->currentStat == NULL)
+		f->currentStat = i;
+
+#ifdef DEBUGVM
+	printf("add\t");
+	printIntruction(f, i);
+#endif
+
 	return after;
 }
 
-Instruction* checkLoad(Function* f, Register* a, Register* ta, BOOL isloadK) {
+Instruction* checkLoad(Function* f, Register* a, Register* ta, BOOL isloadK, Instruction* before) {
 	Instruction* i = NULL;
 	Constant* c;
 
@@ -243,7 +277,11 @@ Instruction* checkLoad(Function* f, Register* a, Register* ta, BOOL isloadK) {
 				i->i.unpacked.opc = OP_LOADK;
 				i->i.unpacked.a = ta->num;
 				i->i.unpacked.bx.bx = a->constnum;
-				pushInstruction(f,i);
+				if(before != NULL) {
+					insertInstruction(f,i,before);
+				} else {
+					pushInstruction(f,i);
+				}
 				ta->isload = TRUE;
 			} else {//just copy constant
 				if(ta->num != a->num) {
@@ -261,7 +299,11 @@ Instruction* checkLoad(Function* f, Register* a, Register* ta, BOOL isloadK) {
 				i->i.unpacked.opc = OP_GETGLOBAL;
 				i->i.unpacked.bx.bx = c->num;
 				i->i.unpacked.a = ta->num;
-				pushInstruction(f, i);
+				if(before != NULL) {
+					insertInstruction(f,i,before);
+				} else {
+					pushInstruction(f,i);
+				}
 				ta->varnum = a->varnum;
 				ta->isload = TRUE;
 			} else {//uninitialized local variable - error
@@ -274,7 +316,11 @@ Instruction* checkLoad(Function* f, Register* a, Register* ta, BOOL isloadK) {
 			i->i.unpacked.opc = OP_MOVE;
 			i->i.unpacked.a = ta->num;
 			i->i.unpacked.bx.l.b = a->num;
-			pushInstruction(f, i);
+			if(before != NULL) {
+				insertInstruction(f,i,before);
+			} else {
+				pushInstruction(f,i);
+			}
 			ta->isload = TRUE;
 		}
 	}
@@ -291,6 +337,7 @@ void freeRegister(Register* r) {
 	r->isload = FALSE;
 	r->islocal = FALSE;
 	r->constpreloaded = FALSE;
+	r->exprStart = NULL;
 }
 
 void tryFreeRegister(Register* r) {
@@ -333,7 +380,7 @@ Constant* pushConstNumber(Function* f, float number) {
 }
 
 Register* getFreeRegister(Function* f) {
-	u08 i;
+	lu08 i;
 	for(i=0; i<CG_REG_COUNT; i++) {
 		if(f->reg[i].isfree) {
 			f->reg[i].isfree = FALSE;
@@ -344,9 +391,9 @@ Register* getFreeRegister(Function* f) {
 	return NULL;
 }
 
-Register* getFreeRegisters(Function* f, u08 count) {
-	u08 i;
-	u08 j;
+Register* getFreeRegisters(Function* f, lu08 count) {
+	lu08 i;
+	lu08 j;
 	BOOL found;
 
 	for(i=0; i<CG_REG_COUNT; i++) {
@@ -371,7 +418,7 @@ Register* getFreeRegisters(Function* f, u08 count) {
 }
 
 Register* getVarRegister(Function* f, Constant* var) {
-	u08 i;
+	lu08 i;
 	Register* r;
 
 	for(i=0; i<CG_REG_COUNT; i++){
@@ -390,8 +437,8 @@ Register* doLogic(Function* f, Register* a, Register* b, Token* t) {
 	Register* res;
 	Instruction* i;
 
-	checkLoad(f, a, a, TRUE);
-	checkLoad(f, b, b, TRUE);
+	checkLoad(f, a, a, TRUE, NULL);
+	checkLoad(f, b, b, TRUE, NULL);
 	res = getFreeRegister(f);
 	
 	i = (Instruction*)malloc(sizeof(Instruction));
@@ -431,8 +478,8 @@ Register* doCompare(Function* f, Register* a, Register* b, Token* t) {
 	Instruction* i = (Instruction*)malloc(sizeof(Instruction));
 	res = getFreeRegister(f);
 	
-	checkLoad(f, a, a, TRUE);
-	checkLoad(f, b, b, TRUE);
+	checkLoad(f, a, a, TRUE, NULL);
+	checkLoad(f, b, b, TRUE, NULL);
 
 	//generate skip next instruction if true
 	i->i.unpacked.a = 1; //do not skip next instruction if comparison valid
@@ -493,10 +540,11 @@ Register* doMath(Function* f, Register* a, Register* b, Token* t) {
 	Register* r;
 	Instruction* i = (Instruction*)malloc(sizeof(Instruction));
 	
-	checkLoad(f, a, a, FALSE);
-	checkLoad(f, b, b, FALSE);
+	checkLoad(f, a, a, FALSE, NULL);
+	checkLoad(f, b, b, FALSE, NULL);
 
-	r = a->islocal ? getFreeRegister(f) : a;
+	//r = a->islocal ? getFreeRegister(f) : a;
+	r = getFreeRegister(f);
 
 	i->i.unpacked.a = r->num;
 	i->i.unpacked.bx.l.b = a->consthold ? a->constnum + CG_REG_COUNT : a->num;
@@ -525,6 +573,7 @@ Register* doMath(Function* f, Register* a, Register* b, Token* t) {
 	pushInstruction(f,i);
 
 	tryFreeRegister(b);
+	tryFreeRegister(a);
 	r->consthold = FALSE;
 	r->constpreloaded = FALSE;
 	r->constnum = 0;
@@ -535,11 +584,97 @@ Register* doMath(Function* f, Register* a, Register* b, Token* t) {
 	return r;
 }
 
+Register* doNil(Function* f) { //allocate register and load nil in it
+	Register* res;
+	Instruction* i = (Instruction*)malloc(sizeof(Instruction));
+
+	res = getFreeRegister(f);
+	i->i.unpacked.opc = OP_LOADNIL;
+	i->i.unpacked.a = res->num; //from register
+	i->i.unpacked.bx.l.b = res->num; //to register
+	i->i.unpacked.bx.l.c = 0; //nothing
+	pushInstruction(f, i);
+	res->isload = TRUE;
+	return res;
+}
+
+Register* doBoolean(Function* f, Token* t) { //allocate register and load bool value in it
+	Register* res;
+	Instruction* i = (Instruction*)malloc(sizeof(Instruction));
+
+	res = getFreeRegister(f);
+	i->i.unpacked.opc = OP_LOADBOOL;
+	i->i.unpacked.a = res->num;
+	i->i.unpacked.bx.l.b = t->token == TK_TRUE ? 1 : 0; //boolean value
+	i->i.unpacked.bx.l.c = 0; //do not skip next instruction
+	pushInstruction(f, i);
+	res->isload = TRUE;
+	return res;
+}
+
+Instruction* statWHILE(Function* f, Register* a, Instruction* block) { //make while block
+	Instruction* i;
+	Instruction* tmp;
+	Instruction* last;
+	Instruction* result;
+	lu16 count = 0;
+
+	checkLoad(f, a, a, TRUE, block);
+
+	//make register test and skip WHILE block if true
+	i = (Instruction*)malloc(sizeof(Instruction));
+	i->i.unpacked.opc = OP_TEST;//load false in result register
+	i->i.unpacked.a = a->num;
+	i->i.unpacked.bx.l.b = 0;
+	i->i.unpacked.bx.l.c = 1; // if false for OR instruction and true for AND instruction
+	insertInstruction(f, i, block);
+
+	i = (Instruction*)malloc(sizeof(Instruction));
+	i->i.unpacked.opc = OP_JMP;//skip while block block
+	i->i.unpacked.bx.bx = 1;
+	insertInstruction(f, i, block);
+
+	//check if given block is not null. If NULL - we have a problem in parser
+	if(block == NULL || a->exprStart == NULL) {
+		f->error_code = E_NULL_INSTRUCTION;
+		return NULL;
+	}
+	//count instructions to skip
+	tmp = block;
+	count++;
+	while(tmp->next != NULL) {
+		count++; 
+		tmp = tmp->next;
+	}
+	i->i.unpacked.bx.bx = ++count; // +1 for final jump instruction
+	last = tmp;
+
+	//count expression block
+	tmp = a->exprStart;
+	count++;
+	while(tmp->next != NULL && tmp->next != block) {
+		count++; 
+		tmp = tmp->next;
+	}
+	i = (Instruction*)malloc(sizeof(Instruction));
+	i->i.unpacked.opc = OP_JMP;//repeat while iteration from expression start
+	i->i.unpacked.bx.bx = -count; //repeat while block + expressions
+
+	//add 1 jump to the end of the "then" to use it in future to jump over "else" or "elseif"
+	addInstruction(f, i, last);
+
+	result = a->exprStart;
+	tryFreeRegister(a);
+	return result;
+}
+
 Instruction* statTHEN(Function* f, Register* a, Instruction* block) {
 	Instruction* i;
 	Instruction* tmp;
 	Instruction* first;
-	u16 count = 1;
+	lu16 count = 1;
+
+	checkLoad(f, a, a, TRUE, block);
 
 	//make register test and skip THEN block if false
 	i = (Instruction*)malloc(sizeof(Instruction));
@@ -561,12 +696,10 @@ Instruction* statTHEN(Function* f, Register* a, Instruction* block) {
 		return NULL;
 	}
 	//count instructions to skip
-	if(block != NULL) { 
-		tmp = block;
-		while(tmp->next != NULL) {
-			count++; 
-			tmp = tmp->next;
-		}
+	tmp = block;
+	while(tmp->next != NULL) {
+		count++; 
+		tmp = tmp->next;
 	}
 	i->i.unpacked.bx.bx = count+1;
 
@@ -585,8 +718,8 @@ Instruction* statELSE(Function* f, Instruction* condlist, Instruction* block) { 
 	Instruction* tmp;
 	Instruction* first;
 	Instruction* jmp;
-	u16 count = 1;
-	u16 countprejump = 0;
+	lu16 count = 1;
+	lu16 countprejump = 0;
 
 	first = condlist;
 	//find last instruction in condlist and make jump over "else" block
@@ -629,8 +762,8 @@ Instruction* statELSEIF(Function* f, Instruction* condlist, Instruction* cond){ 
 	Instruction* tmp;
 	Instruction* first;
 	Instruction* jmp;
-	u16 count = 0;
-	u16 countprejump = 0;
+	lu16 count = 0;
+	lu16 countprejump = 0;
 
 	first = condlist;
 	//find last instruction in condlist and make jump over "else" block
@@ -674,11 +807,11 @@ Instruction* statSET(Function* f, Register* a, Register* b, BOOL islocal) {
 	Constant* c;
 
 	if(islocal) { //local variable - just load
-		i = checkLoad(f, b, a, TRUE);
+		i = checkLoad(f, b, a, TRUE, NULL);
 		a->islocal = TRUE;
 		tryFreeRegister(b);
 	} else {//global variable
-		checkLoad(f, b, b, TRUE);
+		checkLoad(f, b, b, TRUE, NULL);
 		i = (Instruction*)malloc(sizeof(Instruction));
 		c = getVarByNum(f, a->varnum);
 		c = pushConstString(f, &c->val_string);
@@ -691,7 +824,9 @@ Instruction* statSET(Function* f, Register* a, Register* b, BOOL islocal) {
 		b->consthold = FALSE;
 		b->constpreloaded = FALSE;
 		b->constnum = 0;
-		tryFreeRegister(a);
+		//tryFreeRegister(a);
+		freeRegister(a);
+		freeRegister(b);
 		pushInstruction(f,i);
 	}
 	return i;
@@ -708,10 +843,10 @@ Instruction* functionCALL(Function* f, Register* a, Register* b) {
 	tb = &f->reg[ta->num + 1];
 
 	//FUNCTION A reg
-	checkLoad(f,a,ta,TRUE);
+	checkLoad(f,a,ta,TRUE, NULL);
 
 	//ARGUMENTS B reg
-	checkLoad(f,b,tb,TRUE);
+	checkLoad(f,b,tb,TRUE, NULL);
 
 	i->i.unpacked.opc = OP_CALL;
 	i->i.unpacked.a = ta->num;
@@ -738,22 +873,22 @@ Instruction*  doReturn(Function* f)  {
 
 
 void dumpFunction(Function* f, writeBytes write) {
-	u08 buff[6];
+	lu08 buff[6];
 	Instruction *i;
 	Constant* c;
 	Function* fp;
-	u08 j;
+	lu08 j;
 
 	//dump instructions
-	((u16*)buff)[0] = f->instrSize; write(buff, 2);
+	((lu16*)buff)[0] = f->instrSize; write(buff, 2);
 	i = f->instr;
 	while(i != NULL) {
-		((u32*)buff)[0] = i->i.packed; write(buff, 4);
+		((lu32*)buff)[0] = i->i.packed; write(buff, 4);
 		i = i->next;
 	}
 
 	//dump constants
-	((u16*)buff)[0] = f->constsSize; write(buff, 2);
+	((lu16*)buff)[0] = f->constsSize; write(buff, 2);
 	c = f->consts;
 	while(c != NULL) {
 		buff[0] = c->type; write(buff, 1); //const type
@@ -762,7 +897,7 @@ void dumpFunction(Function* f, writeBytes write) {
 				((float*)buff)[0] = c->val_number ; write(buff, sizeof(float));
 				break;
 			case STRING_TYPE: //string
-				((u16*)buff)[0] = c->val_string.bplen + 1; write(buff, 2); //string len
+				((lu16*)buff)[0] = c->val_string.bplen + 1; write(buff, 2); //string len
 				for(j=0; j < c->val_string.bplen; j++) {
 					buff[0] = f->code[c->val_string.bp+j]; write(buff, 1); //string char
 				}
@@ -773,7 +908,7 @@ void dumpFunction(Function* f, writeBytes write) {
 	}
 
 	//dump functions
-	((u16*)buff)[0] = f->subfuncsSize; write(buff, 2);
+	((lu16*)buff)[0] = f->subfuncsSize; write(buff, 2);
 	fp = f->subfuncs;
 	while(fp != NULL) {
 		dumpFunction(fp, write);
@@ -782,7 +917,7 @@ void dumpFunction(Function* f, writeBytes write) {
 }
 
 void dump(Function* f, writeBytes callback) {
-	u08 buff[6];
+	lu08 buff[6];
 
 	//write header
 	buff[0] = 0x1B; //"Lua"
@@ -796,3 +931,4 @@ void dump(Function* f, writeBytes callback) {
 	//dump top level function
 	dumpFunction(f, callback);
 }
+
